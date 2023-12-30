@@ -1,1 +1,1 @@
-# raspinoaa-syncer
+# raspinoaa-supabase-syncing
