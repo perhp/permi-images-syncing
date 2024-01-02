@@ -1,17 +1,18 @@
 require('dotenv').config();
 
 import { supabase } from "./libs/supabase";
-import { parseFileName } from "./utils/parse-file-name";
+import { DecodedPass } from './models/decoded-pass';
 
-const fs = require('fs');
-fs.readdir('/srv/images', (err: Error, files: string[]) => {
-    if (err) {
-        console.error(err);
-        return;
-    } 
+const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database('/home/leducia/raspberry-noaa-v2/db/panel.db');
 
-    const filesWithoutThumb = files.filter(file => file !== 'thumb');
-    const satelliteImages = filesWithoutThumb.map(file => parseFileName(file));
-    console.log(satelliteImages);
-    console.log(supabase);
+db.serialize(() => {
+    db.each("SELECT * FROM decoded_passes", (err: any, row: DecodedPass) => {
+        if (err) {
+            console.error(err);
+            return;
+        }
+
+        console.log(row);
+    });
 });
