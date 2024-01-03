@@ -3,16 +3,17 @@
     "dev": "nodemon",
     "start": "ts-node src/index.ts"
   },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.1",
+    "@types/better-sqlite3": "^7.6.8",
+    "dotenv": "^16.3.1",
+    "sqlite3": "^5.1.7-rc.0"
+  },
   "devDependencies": {
     "@types/node": "^20.10.6",
     "@types/sqlite3": "^3.1.11",
     "nodemon": "^3.0.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.39.1",
-    "dotenv": "^16.3.1",
-    "sqlite3": "^5.1.7-rc.0"
   }
 }
