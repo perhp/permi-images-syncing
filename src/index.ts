@@ -9,9 +9,8 @@ import { DecodedPass } from './models/decoded-pass';
 const sqlite3 = require('sqlite3').verbose();
 const db = new sqlite3.Database('/home/leducia/raspberry-noaa-v2/db/panel.db');
 
-(async () => {
+async function sync() {
     const images = (await readdir('/srv/images')).filter(path => path !== 'thumb');
-    const thumbs = await readdir('/srv/images/thumb');
 
     db.serialize(() => {
         db.each("SELECT * FROM decoded_passes", async (err: any, row: DecodedPass) => {
@@ -20,8 +19,8 @@ const db = new sqlite3.Database('/home/leducia/raspberry-noaa-v2/db/panel.db');
                 return;
             }
 
-            const { id, file_path, pass_start } = row;
-            const { data: existingPass, error: existingError } = await supabase.from('passes').select('id').eq('id', id).single();
+            const { id, file_path } = row;
+            const { data: existingPass } = await supabase.from('passes').select('id').eq('id', id).single();
             if (existingPass) {
                 console.warn(`Pass ${id} already exists`);
                 return;
@@ -48,4 +47,8 @@ const db = new sqlite3.Database('/home/leducia/raspberry-noaa-v2/db/panel.db');
             ]);
         });
     });
-})();
+}
+
+// Sync every 30 minutes
+setInterval(sync, 1000 * 60 * 30);
+sync();
