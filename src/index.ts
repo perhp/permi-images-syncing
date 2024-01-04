@@ -5,12 +5,14 @@ require('dotenv').config();
 import { readFile, readdir } from 'node:fs/promises';
 import { supabase } from "./libs/supabase";
 import { DecodedPass } from './models/decoded-pass';
+import { format, addMinutes } from 'date-fns';
 
 import Database from 'better-sqlite3';
 const db = new Database('/home/leducia/raspberry-noaa-v2/db/panel.db');
 
 async function sync() {
-    console.log('Syncing...');
+    const now = +new Date();
+    console.log(`${format(new Date(), 'HH:mm:ss')}: Syncing...\n`);
 
     const images = (await readdir('/srv/images')).filter(path => path !== 'thumb');
     const statement = db.prepare<DecodedPass[]>('SELECT * FROM decoded_passes');
@@ -18,14 +20,16 @@ async function sync() {
     for (const pass of passes as DecodedPass[]) {
         console.log('    Syncing pass: ' + pass.id);
 
+        console.log('    - Checking pass existence...');
         const { id } = pass as DecodedPass;
         const { data: existingPass } = await supabase.from('passes').select('id').eq('id', id).single();
         if (existingPass) {
-            console.warn(`    Pass ${id} already exists`);
+            console.warn('    - Pass already exists\n');
             continue;
         }
 
-        await supabase.from('passes').insert({
+        console.log('    - Inserting pass...');
+        const { error: passError } = await supabase.from('passes').insert({
             id,
             gain: pass.gain,
             pass_start: new Date(pass.pass_start * 1000),
@@ -39,18 +43,32 @@ async function sync() {
             is_meteor: pass.file_path.includes('METEOR'),
         });
 
+        if (passError) {
+            console.warn(`    - Couldn't insert pass`);
+            console.log(JSON.stringify(passError, null, 2));
+            continue;
+        }
+
+        console.log('    - Uploading images to supabase...');
         const passImages = images.filter(image => image.startsWith(pass.file_path));
-        await Promise.all([
+        const imagesResponses = await Promise.all([
             ...passImages.map(image => supabase.from('passes_images').insert({ path: image, fk_passes_id: id })),
             ...passImages.map(async image => supabase.storage.from('passes').upload(`images/${image}`, (await readFile(`/srv/images/${image}`)), { contentType: 'image/' + image.split('.').pop() })),
         ]);
 
-        console.log(`    Pass ${id} synced succesfully`);
+        const imagesErrors = imagesResponses.filter(response => response.error !== null);
+        if (imagesErrors.length > 0) {
+            console.warn(`    - Couldn't upload all images`);
+            console.log(JSON.stringify(imagesErrors, null, 2));
+            continue;
+        }
+
+        console.log(`    - Pass synced succesfully\n`);
     }
 
-    console.log('Done!');
+    console.log(`${format(new Date(), 'HH:mm:ss')}: Done in ${+new Date() - now}ms! Next sync at ${format(addMinutes(new Date(), 15), 'HH:mm')}.`);
 }
 
-// Sync every 30 minutes
-setInterval(sync, 1000 * 60 * 30);
+// Sync every 15 minutes
+setInterval(sync, 1000 * 60 * 15);
 sync();
