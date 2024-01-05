@@ -49,7 +49,7 @@ async function sync() {
             continue;
         }
 
-        console.log('    - Uploading images to supabase...');
+        console.log('    - Uploading images...');
         const passImages = images.filter(image => image.startsWith(pass.file_path));
         const imagesResponses = await Promise.all([
             ...passImages.map(image => supabase.from('passes_images').insert({ path: image, fk_passes_id: id })),
