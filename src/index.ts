@@ -10,6 +10,8 @@ import { format, addMinutes } from 'date-fns';
 import Database from 'better-sqlite3';
 const db = new Database('/home/leducia/raspberry-noaa-v2/db/panel.db');
 
+const syncedPassesIds: number[] = [];
+
 async function sync() {
     const now = +new Date();
     console.log(`${format(new Date(), 'HH:mm:ss')}: Syncing...\n`);
@@ -20,17 +22,22 @@ async function sync() {
     for (const pass of passes as DecodedPass[]) {
         console.log('    Syncing pass: ' + pass.id);
 
+        if (syncedPassesIds.includes(pass.id)) {
+            console.log('    - Pass already synced\n');
+            continue;
+        }
+
         console.log('    - Checking pass existence...');
-        const { id } = pass as DecodedPass;
-        const { data: existingPass } = await supabase.from('passes').select('id').eq('id', id).single();
+        const { data: existingPass } = await supabase.from('passes').select('id').eq('id', pass.id).single();
         if (existingPass) {
+            syncedPassesIds.push(pass.id);
             console.warn('    - Pass already exists\n');
             continue;
         }
 
         console.log('    - Inserting pass...');
         const { error: passError } = await supabase.from('passes').insert({
-            id,
+            id: pass.id,
             gain: pass.gain,
             pass_start: new Date(pass.pass_start * 1000),
             daylight_pass: Boolean(pass.daylight_pass),
@@ -52,7 +59,7 @@ async function sync() {
         console.log('    - Uploading images...');
         const passImages = images.filter(image => image.startsWith(pass.file_path));
         const imagesResponses = await Promise.all([
-            ...passImages.map(image => supabase.from('passes_images').insert({ path: image, fk_passes_id: id })),
+            ...passImages.map(image => supabase.from('passes_images').insert({ path: image, fk_passes_id: pass.id })),
             ...passImages.map(async image => supabase.storage.from('passes').upload(`images/${image}`, (await readFile(`/srv/images/${image}`)), { contentType: 'image/' + image.split('.').pop() })),
         ]);
 
@@ -63,6 +70,7 @@ async function sync() {
             continue;
         }
 
+        syncedPassesIds.push(pass.id);
         console.log(`    - Pass synced succesfully\n`);
     }
 
