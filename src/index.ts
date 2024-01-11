@@ -74,9 +74,9 @@ async function sync() {
         console.log(`    - Pass synced succesfully\n`);
     }
 
-    console.log(`${format(new Date(), 'HH:mm:ss')}: Done in ${+new Date() - now}ms! Next sync at ${format(addMinutes(new Date(), 15), 'HH:mm')}.`);
+    console.log(`${format(new Date(), 'HH:mm:ss')}: Done in ${+new Date() - now}ms! Next sync at ${format(addMinutes(new Date(), 5), 'HH:mm')}.`);
 }
 
 // Sync every 15 minutes
-setInterval(sync, 1000 * 60 * 15);
+setInterval(sync, 1000 * 60 * 5);
 sync();
