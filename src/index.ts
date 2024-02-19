@@ -17,9 +17,11 @@ async function sync() {
   const now = +new Date();
 
   console.log("    Getting initial passes...\n");
-  const { data: initialPasses } = await supabase.from("passes").select("id");
-  if (initialPasses) {
-    syncedPassesIds.push(...initialPasses.map((pass) => pass.id));
+  if (syncedPassesIds.length === 0) {
+    const { data: initialPasses } = await supabase.from("passes").select("id");
+    if (initialPasses) {
+      syncedPassesIds.push(...initialPasses.map((pass) => pass.id));
+    }
   }
 
   const images = (await readdir("/srv/images")).filter(
