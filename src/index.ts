@@ -16,7 +16,7 @@ async function sync() {
   console.log(`${format(new Date(), "HH:mm:ss")}: Syncing...\n`);
   const now = +new Date();
 
-  console.log("    Getting initial passes...");
+  console.log("    Getting initial passes...\n");
   const { data: initialPasses } = await supabase.from("passes").select("id");
   if (initialPasses) {
     syncedPassesIds.push(...initialPasses.map((pass) => pass.id));
