@@ -100,6 +100,7 @@ async function sync() {
         .from("passes")
         .upload(`images/${image}`, await readFile(`/srv/images/${image}`), {
           contentType: "image/" + image.split(".").pop(),
+          upsert: true,
         });
 
       imagesResponses.push(dbResponse);
