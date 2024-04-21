@@ -2,14 +2,16 @@ console.log("Starting up...");
 
 require("dotenv").config();
 
+import { PostgrestSingleResponse } from "@supabase/supabase-js";
+import Database from "better-sqlite3";
 import { addMinutes, format } from "date-fns";
 import { readFile, readdir } from "node:fs/promises";
 import { supabase } from "./libs/supabase";
 import { DecodedPass } from "./models/decoded-pass";
 
-import Database from "better-sqlite3";
 const db = new Database("/home/leducia/raspberry-noaa-v2/db/panel.db");
 
+const SYNC_INTERVAL_MINUTES = 5;
 const syncedPassesIds: number[] = [];
 
 async function sync() {
@@ -74,20 +76,36 @@ async function sync() {
     const passImages = images.filter((image) =>
       image.startsWith(pass.file_path)
     );
-    const imagesResponses = await Promise.all([
-      ...passImages.map((image) =>
-        supabase
-          .from("passes_images")
-          .insert({ path: image, fk_passes_id: pass.id })
-      ),
-      ...passImages.map(async (image) =>
-        supabase.storage
-          .from("passes")
-          .upload(`images/${image}`, await readFile(`/srv/images/${image}`), {
-            contentType: "image/" + image.split(".").pop(),
-          })
-      ),
-    ]);
+    const imagesResponses:
+      | (
+          | {
+              data: {
+                path: string;
+              };
+              error: null;
+            }
+          | {
+              data: null;
+              error: any;
+            }
+          | PostgrestSingleResponse<null>
+        )[] = [];
+
+    for (let image of passImages) {
+      const dbResponse = await supabase
+        .from("passes_images")
+        .insert({ path: image, fk_passes_id: pass.id });
+      const storageResponse = await supabase.storage
+        .from("passes")
+        .upload(`images/${image}`, await readFile(`/srv/images/${image}`), {
+          contentType: "image/" + image.split(".").pop(),
+        });
+
+      imagesResponses.push(dbResponse);
+      imagesResponses.push(storageResponse);
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
 
     const imagesErrors = imagesResponses.filter(
       (response) => response.error !== null
@@ -95,6 +113,9 @@ async function sync() {
     if (imagesErrors.length > 0) {
       console.warn(`    - Couldn't upload all images`);
       console.log(JSON.stringify(imagesErrors, null, 2));
+
+      await supabase.from("passes").delete().eq("id", pass.id);
+      await supabase.from("passes_images").delete().eq("fk_passes_id", pass.id);
       continue;
     }
 
@@ -105,10 +126,12 @@ async function sync() {
   console.log(
     `${format(new Date(), "HH:mm:ss")}: Done in ${
       +new Date() - now
-    }ms! Next sync at ${format(addMinutes(new Date(), 5), "HH:mm")}.`
+    }ms! Next sync at ${format(
+      addMinutes(new Date(), SYNC_INTERVAL_MINUTES),
+      "HH:mm"
+    )}.`
   );
 }
 
-// Sync every 15 minutes
-setInterval(sync, 1000 * 60 * 5);
+setInterval(sync, 1000 * 60 * SYNC_INTERVAL_MINUTES);
 sync();
