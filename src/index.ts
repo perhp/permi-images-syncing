@@ -91,6 +91,7 @@ async function sync() {
           | PostgrestSingleResponse<null>
         )[] = [];
 
+    let uploadCount = 1;
     for (let image of passImages) {
       const dbResponse = await supabase
         .from("passes_images")
@@ -104,7 +105,10 @@ async function sync() {
       imagesResponses.push(dbResponse);
       imagesResponses.push(storageResponse);
 
+      console.log(`    - ${uploadCount}/${passImages.length} images uploaded`);
+
       await new Promise((resolve) => setTimeout(resolve, 1000));
+      uploadCount++;
     }
 
     const imagesErrors = imagesResponses.filter(
