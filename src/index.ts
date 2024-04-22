@@ -8,6 +8,7 @@ import { addMinutes, format } from "date-fns";
 import { readFile, readdir } from "node:fs/promises";
 import { supabase } from "./libs/supabase";
 import { DecodedPass } from "./models/decoded-pass";
+import { decodedPassesQuery } from "./queries/decoded-passes";
 
 const db = new Database("/home/leducia/raspberry-noaa-v2/db/panel.db");
 
@@ -29,7 +30,7 @@ async function sync() {
   const images = (await readdir("/srv/images")).filter(
     (path) => path !== "thumb"
   );
-  const statement = db.prepare<DecodedPass[]>("SELECT * FROM decoded_passes");
+  const statement = db.prepare<DecodedPass[]>(decodedPassesQuery);
   const passes = statement.all();
   for (const pass of passes as DecodedPass[]) {
     console.log("    Syncing pass: " + pass.id);
@@ -62,6 +63,11 @@ async function sync() {
       has_polar_direction: Boolean(pass.has_polar_direction),
       has_pristine: Boolean(pass.has_pristine),
       has_spectrogram: Boolean(pass.has_spectrogram),
+      max_elevation: pass.max_elev,
+      direction: pass.direction,
+      azimuth_at_max: pass.azimuth_at_max,
+      pass_end: new Date(pass.pass_end * 1000),
+      pass_start_azimuth: pass.pass_start_azimuth,
       is_noaa: pass.file_path.includes("NOAA"),
       is_meteor: pass.file_path.includes("METEOR"),
     });
