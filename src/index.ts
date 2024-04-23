@@ -1,4 +1,4 @@
-console.log("Starting up...");
+console.log(`${format(new Date(), "HH:mm:ss")}: Starting up...`);
 
 require("dotenv").config();
 
