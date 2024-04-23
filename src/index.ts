@@ -1,5 +1,3 @@
-console.log(`${format(new Date(), "HH:mm:ss")}: Starting up...`);
-
 require("dotenv").config();
 
 import { PostgrestSingleResponse } from "@supabase/supabase-js";
@@ -9,6 +7,8 @@ import { readFile, readdir } from "node:fs/promises";
 import { supabase } from "./libs/supabase";
 import { DecodedPass } from "./models/decoded-pass";
 import { decodedPassesQuery } from "./queries/decoded-passes";
+
+console.log(`${format(new Date(), "HH:mm:ss")}: Starting up...`);
 
 const db = new Database("/home/leducia/raspberry-noaa-v2/db/panel.db");
 
