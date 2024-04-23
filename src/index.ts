@@ -148,7 +148,7 @@ async function sync() {
     }ms! Next sync at ${format(
       addMinutes(new Date(), SYNC_INTERVAL_MINUTES),
       "HH:mm"
-    )}.`
+    )}.\n`
   );
 }
 
