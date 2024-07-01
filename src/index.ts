@@ -7,6 +7,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { supabase } from "./libs/supabase";
 import { DecodedPass } from "./models/decoded-pass";
 import { decodedPassesQuery } from "./queries/decoded-passes";
+import { formatDuration } from "./utils/format-duration";
 
 console.log(`${format(new Date(), "HH:mm:ss")}: Starting up...`);
 
@@ -143,9 +144,9 @@ async function sync() {
   }
 
   console.log(
-    `${format(new Date(), "HH:mm:ss")}: Done in ${
+    `${format(new Date(), "HH:mm:ss")}: Done in ${formatDuration(
       +new Date() - now
-    }ms! Next sync at ${format(
+    )}! Next sync at ${format(
       addMinutes(new Date(), SYNC_INTERVAL_MINUTES),
       "HH:mm"
     )}.\n`
