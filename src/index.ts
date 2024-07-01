@@ -150,7 +150,8 @@ async function sync() {
       "HH:mm"
     )}.\n`
   );
+
+  setTimeout(sync, 1000 * 60 * SYNC_INTERVAL_MINUTES);
 }
 
-setInterval(sync, 1000 * 60 * SYNC_INTERVAL_MINUTES);
 sync();
