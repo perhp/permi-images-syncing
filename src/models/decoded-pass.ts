@@ -1,20 +1,20 @@
 export interface DecodedPass {
   id: number;
-  pass_start: number;
-  file_path: string;
+  azimuth_at_max: number;
   daylight_pass: number;
-  is_noaa: number | null;
-  sat_type: number;
-  img_count: number | null;
-  has_spectrogram: number;
-  has_pristine: number;
+  direction: string;
+  file_path: string;
   gain: number;
+  has_histogram: number;
   has_polar_az_el: number;
   has_polar_direction: number;
-  has_histogram: number;
+  has_pristine: number;
+  has_spectrogram: number;
+  img_count: number | null;
+  is_noaa: number | null;
   max_elev: number;
-  direction: string;
-  azimuth_at_max: number;
   pass_end: number;
   pass_start_azimuth: number;
+  pass_start: number;
+  sat_type: number;
 }

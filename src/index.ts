@@ -58,21 +58,21 @@ async function sync() {
       console.log("    - Inserting pass...");
       const { error: passError } = await supabase.from("passes").insert({
         id: pass.id,
-        gain: pass.gain,
-        pass_start: new Date(pass.pass_start * 1000),
+        azimuth_at_max: pass.azimuth_at_max,
         daylight_pass: Boolean(pass.daylight_pass),
+        direction: pass.direction,
+        gain: pass.gain,
         has_histogram: Boolean(pass.has_histogram),
         has_polar_az_el: Boolean(pass.has_polar_az_el),
         has_polar_direction: Boolean(pass.has_polar_direction),
         has_pristine: Boolean(pass.has_pristine),
         has_spectrogram: Boolean(pass.has_spectrogram),
+        is_meteor: pass.file_path.includes("METEOR"),
+        is_noaa: pass.file_path.includes("NOAA"),
         max_elevation: pass.max_elev,
-        direction: pass.direction,
-        azimuth_at_max: pass.azimuth_at_max,
         pass_end: new Date(pass.pass_end * 1000),
         pass_start_azimuth: pass.pass_start_azimuth,
-        is_noaa: pass.file_path.includes("NOAA"),
-        is_meteor: pass.file_path.includes("METEOR"),
+        pass_start: new Date(pass.pass_start * 1000),
       });
 
       if (passError) {
