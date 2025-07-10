@@ -15,19 +15,22 @@ const db = new Database("/home/leducia/raspberry-noaa-v2/db/panel.db");
 
 const SYNC_INTERVAL_MINUTES = 5;
 const syncedPassesIds: number[] = [];
+const syncedPassesIds = new Set<number>();
 
 async function sync() {
   try {
     console.log(`${format(new Date(), "HH:mm:ss")}: Syncing...\n`);
     const now = +new Date();
 
-    if (syncedPassesIds.length === 0) {
+    if (syncedPassesIds.size === 0) {
       console.log("    Getting initial passes...\n");
       const { data: initialPasses } = await supabase
         .from("passes")
         .select("id");
       if (initialPasses) {
-        syncedPassesIds.push(...initialPasses.map((pass) => pass.id));
+        for (const pass of initialPasses) {
+          syncedPassesIds.add(pass.id);
+        }
       }
     }
 
@@ -37,12 +40,12 @@ async function sync() {
     const statement = db.prepare<DecodedPass[]>(decodedPassesQuery);
     const passes = statement.all() as DecodedPass[];
 
-    if (passes.every((pass) => syncedPassesIds.includes(pass.id))) {
+    if (passes.every((pass) => syncedPassesIds.has(pass.id))) {
       console.log("    No new passes to sync\n");
     } else {
       for (const pass of passes) {
         try {
-          if (syncedPassesIds.includes(pass.id)) {
+          if (syncedPassesIds.has(pass.id)) {
             continue;
           }
 
@@ -54,7 +57,7 @@ async function sync() {
             .eq("id", pass.id)
             .single();
           if (existingPass) {
-            syncedPassesIds.push(pass.id);
+            syncedPassesIds.add(pass.id);
             console.warn("    - Pass already exists \n");
             continue;
           }
@@ -146,7 +149,7 @@ async function sync() {
             continue;
           }
 
-          syncedPassesIds.push(pass.id);
+          syncedPassesIds.add(pass.id);
           console.log(`    - Pass synced succesfully\n`);
         } catch (err) {
           console.error("    - Pass syncing failed!\n");
