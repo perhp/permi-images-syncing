@@ -1,10 +1,23 @@
-# raspinoaa to supabase syncer
+# raspinoaa → Supabase Syncer
 
-This project synchronizes weather satellite images from my Raspberry Pi to https://www.permi.dk. It is a straightforward process: it accesses the SQLite database on the device using raspinoaa, compares it with my own database, and uploads any missing satellite passes to the server.
+This lightweight utility keeps the weather‑satellite images captured on a Raspberry Pi in sync with my public site, <https://www.permi.dk>. It works in three simple steps:
 
-If you want something similar, you'll just need to have raspinoaa installed on your raspberry with default settings, and a supabase project with the following tables:
+1. Connects to the local **raspinoaa** SQLite database on the Pi.
+2. Compares the recorded passes with the rows already stored in Supabase.
+3. Uploads any new or missing passes—together with their images—to the cloud.
 
-| passses             |             |
+---
+
+## Getting Started
+
+**Prerequisites**
+
+- A Raspberry Pi running **raspinoaa** with its default settings.
+- A Supabase project configured with the two tables shown below.
+
+### passes
+
+| column              | type        |
 | ------------------- | ----------- |
 | id                  | int8        |
 | azimuth_at_max      | int8        |
@@ -24,9 +37,11 @@ If you want something similar, you'll just need to have raspinoaa installed on y
 | pass_start          | timestamptz |
 | created_at          | timestamptz |
 
-| passses_images |             |
-| -------------- | ----------- |
-| id             | int8        |
-| path           | text        |
-| fk_passes_id   | int8        |
-| created_at     | timestamptz |
+### passes_images
+
+| column       | type        |
+| ------------ | ----------- |
+| id           | int8        |
+| path         | text        |
+| fk_passes_id | int8        |
+| created_at   | timestamptz |
