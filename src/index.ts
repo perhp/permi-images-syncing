@@ -8,6 +8,7 @@ import { supabase } from "./libs/supabase";
 import { DecodedPass } from "./models/decoded-pass";
 import { decodedPassesQuery } from "./queries/decoded-passes";
 import { formatDuration } from "./utils/format-duration";
+import { sleep } from "./utils/sleep";
 
 console.log(`${format(new Date(), "HH:mm:ss")}: Starting up...`);
 
@@ -130,7 +131,7 @@ async function sync() {
               `    - ${uploadCount}/${passImages.length} images uploaded`
             );
 
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+            await sleep(1_000);
             uploadCount++;
           }
 
@@ -175,9 +176,7 @@ async function sync() {
     setTimeout(sync, 1000 * 60 * SYNC_INTERVAL_MINUTES);
   } catch (err) {
     console.error("    - Error!\n");
-    await new Promise((resolve) =>
-      setTimeout(resolve, 1000 * 60 * SYNC_INTERVAL_MINUTES)
-    );
+    await sleep(SYNC_INTERVAL_MINUTES * 60_000);
     sync();
   }
 }
