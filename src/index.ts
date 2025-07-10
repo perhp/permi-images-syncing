@@ -12,10 +12,16 @@ import { sleep } from "./utils/sleep";
 
 console.log(`${format(new Date(), "HH:mm:ss")}: Starting up...`);
 
-const db = new Database("/home/leducia/raspberry-noaa-v2/db/panel.db");
+const IMAGE_DIR = process.env.IMAGE_DIR ?? "/srv/images";
+const DB_PATH =
+  process.env.SQLITE_DB_PATH ?? "/home/leducia/raspberry-noaa-v2/db/panel.db";
+const SYNC_INTERVAL_MINUTES = parseInt(
+  process.env.SYNC_INTERVAL_MINUTES ?? "5",
+  10
+);
 
-const SYNC_INTERVAL_MINUTES = 5;
-const syncedPassesIds: number[] = [];
+const db = new Database(DB_PATH);
+
 const syncedPassesIds = new Set<number>();
 
 async function sync() {
@@ -35,7 +41,7 @@ async function sync() {
       }
     }
 
-    const images = (await readdir("/srv/images")).filter(
+    const images = (await readdir(IMAGE_DIR)).filter(
       (path) => path !== "thumb"
     );
     const statement = db.prepare<DecodedPass[]>(decodedPassesQuery);
@@ -117,7 +123,7 @@ async function sync() {
               .from("passes")
               .upload(
                 `images/${image}`,
-                await readFile(`/srv/images/${image}`),
+                await readFile(`${IMAGE_DIR}/${image}`),
                 {
                   contentType: "image/" + image.split(".").pop(),
                   upsert: true,
@@ -173,7 +179,7 @@ async function sync() {
       )}.\n`
     );
 
-    setTimeout(sync, 1000 * 60 * SYNC_INTERVAL_MINUTES);
+    setTimeout(sync, SYNC_INTERVAL_MINUTES * 60_000);
   } catch (err) {
     console.error("    - Error!\n");
     await sleep(SYNC_INTERVAL_MINUTES * 60_000);
