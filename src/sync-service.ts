@@ -1,6 +1,11 @@
 import { format } from "date-fns";
 import { AppConfig } from "./config";
-import { LocalImage, LocalPass, PassRecord } from "./models/decoded-pass";
+import {
+  LocalImage,
+  LocalPass,
+  PassRecord,
+  RemotePass,
+} from "./models/decoded-pass";
 import { RemoteSnapshot } from "./supabase-target";
 import { formatDuration } from "./utils/format-duration";
 
@@ -16,7 +21,7 @@ interface SyncTarget {
   getSnapshot(): Promise<RemoteSnapshot>;
   insertImageRows(passId: number, paths: string[]): Promise<void>;
   uploadImage(image: LocalImage): Promise<void>;
-  upsertPass(pass: PassRecord): Promise<void>;
+  upsertPass(pass: PassRecord): Promise<RemotePass>;
 }
 
 interface CycleSummary {
@@ -46,7 +51,7 @@ function describeError(error: unknown): string {
 
 function passRecordsEqual(left: PassRecord, right: PassRecord) {
   return (
-    left.id === right.id &&
+    left.source_id === right.source_id &&
     left.azimuth_at_max === right.azimuth_at_max &&
     left.daylight_pass === right.daylight_pass &&
     left.direction === right.direction &&
@@ -130,10 +135,11 @@ export class SyncService {
     options: SyncOptions,
     summary: CycleSummary
   ) {
-    const passId = pass.record.id;
-    const remotePass = snapshot.passes.get(passId);
+    const sourceId = pass.record.source_id;
+    let remotePass = snapshot.passesBySourceId.get(sourceId);
     const remoteImagePaths =
-      snapshot.imagePathsByPass.get(passId) ?? new Set<string>();
+      (remotePass && snapshot.imagePathsByPass.get(remotePass.id)) ??
+      new Set<string>();
     const missingStorageImages = pass.images.filter(
       (image) => !snapshot.storagePaths.has(image.storagePath)
     );
@@ -145,7 +151,9 @@ export class SyncService {
 
     if (pass.images.length === 0) {
       summary.passesSkippedWithoutImages++;
-      console.warn(`    Pass ${passId}: skipped because no local images exist`);
+      console.warn(
+        `    Source pass ${sourceId}: skipped because no local images exist`
+      );
       return;
     }
 
@@ -159,7 +167,7 @@ export class SyncService {
     }
 
     console.log(
-      `    Pass ${passId}: ${missingStorageImages.length} storage upload(s), ${
+      `    Source pass ${sourceId}: ${missingStorageImages.length} storage upload(s), ${
         passNeedsUpsert ? 1 : 0
       } pass upsert(s), ${missingImageRows.length} image row(s)`
     );
@@ -183,21 +191,25 @@ export class SyncService {
     );
 
     if (passNeedsUpsert) {
-      await this.target.upsertPass(pass.record);
-      snapshot.passes.set(passId, pass.record);
+      remotePass = await this.target.upsertPass(pass.record);
+      snapshot.passesBySourceId.set(sourceId, remotePass);
+    }
+
+    if (!remotePass) {
+      throw new Error(`Source pass ${sourceId} has no Supabase ID after upsert`);
     }
 
     if (missingImageRows.length > 0) {
       await this.target.insertImageRows(
-        passId,
+        remotePass.id,
         missingImageRows.map((image) => image.name)
       );
       const imagePaths =
-        snapshot.imagePathsByPass.get(passId) ?? new Set<string>();
+        snapshot.imagePathsByPass.get(remotePass.id) ?? new Set<string>();
       for (const image of missingImageRows) {
         imagePaths.add(image.name);
       }
-      snapshot.imagePathsByPass.set(passId, imagePaths);
+      snapshot.imagePathsByPass.set(remotePass.id, imagePaths);
       summary.imageRowsInserted += missingImageRows.length;
     }
 
@@ -229,7 +241,9 @@ export class SyncService {
         summary.failed++;
         this.lastRemoteRefresh = 0;
         console.error(
-          `    Pass ${pass.record.id}: sync failed\n${describeError(error)}`
+          `    Source pass ${pass.record.source_id}: sync failed\n${describeError(
+            error
+          )}`
         );
       }
     }

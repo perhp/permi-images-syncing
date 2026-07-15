@@ -18,7 +18,7 @@ export interface DecodedPass {
 }
 
 export interface PassRecord {
-  id: number;
+  source_id: number;
   azimuth_at_max: number;
   daylight_pass: boolean;
   direction: string;
@@ -34,6 +34,10 @@ export interface PassRecord {
   pass_end: string;
   pass_start_azimuth: number;
   pass_start: string;
+}
+
+export interface RemotePass extends PassRecord {
+  id: number;
 }
 
 export interface LocalImage {

@@ -21,7 +21,7 @@ const CONTENT_TYPES: Record<string, string> = {
 
 function toPassRecord(pass: DecodedPass): PassRecord {
   return {
-    id: pass.id,
+    source_id: pass.id,
     azimuth_at_max: pass.azimuth_at_max,
     daylight_pass: Boolean(pass.daylight_pass),
     direction: pass.direction,

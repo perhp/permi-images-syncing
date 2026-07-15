@@ -15,8 +15,8 @@ Each cycle:
 2. Finds the exact local image files belonging to each pass.
 3. Refreshes paginated manifests from `passes`, `passes_images`, and Storage.
 4. Uploads missing Storage objects with bounded concurrency.
-5. Upserts the pass after its Storage uploads succeed.
-6. Inserts any missing `passes_images` rows as a batch.
+5. Upserts the pass by its local `source_id` after Storage uploads succeed.
+6. Uses Supabase's generated pass ID for new `passes_images` rows.
 
 The operations are idempotent. A failure leaves successfully uploaded objects
 in place, and the next cycle resumes the missing work instead of deleting
@@ -96,14 +96,25 @@ npm run dev
 
 ## Supabase schema
 
-The `passes.id` column must be a primary key or unique column so pass upserts
-can use it as their conflict target.
+Create `passes.id` as a database-generated identity primary key. Also create a
+required, unique `source_id` column containing the original
+`decoded_passes.id` value from raspinoaa:
+
+```sql
+id bigint generated always as identity primary key,
+source_id bigint not null unique
+```
+
+Pass upserts use `source_id` as their conflict target without sending an `id`.
+Supabase generates `passes.id`, returns it to the syncer, and that value is
+stored in `passes_images.fk_passes_id`.
 
 ### `passes`
 
 | Column | Type |
 | --- | --- |
-| `id` | `int8` |
+| `id` | `int8` identity, primary key |
+| `source_id` | `int8`, unique |
 | `azimuth_at_max` | `int8` |
 | `daylight_pass` | `bool` |
 | `direction` | `text` |

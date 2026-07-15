@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { readFile } from "node:fs/promises";
 import { AppConfig } from "./config";
-import { LocalImage, PassRecord } from "./models/decoded-pass";
+import { LocalImage, PassRecord, RemotePass } from "./models/decoded-pass";
 import { sleep } from "./utils/sleep";
 
 const TABLE_PAGE_SIZE = 1_000;
@@ -14,7 +14,7 @@ interface RemoteImageRow {
 
 export interface RemoteSnapshot {
   imagePathsByPass: Map<number, Set<string>>;
-  passes: Map<number, PassRecord>;
+  passesBySourceId: Map<number, RemotePass>;
   storagePaths: Set<string>;
 }
 
@@ -30,10 +30,11 @@ function describeError(error: unknown) {
   return String(error);
 }
 
-function normalizePass(pass: PassRecord): PassRecord {
+function normalizePass(pass: RemotePass): RemotePass {
   return {
     ...pass,
     id: Number(pass.id),
+    source_id: Number(pass.source_id),
     azimuth_at_max: Number(pass.azimuth_at_max),
     gain: Number(pass.gain),
     max_elevation: Number(pass.max_elevation),
@@ -83,17 +84,19 @@ export class SupabaseTarget {
   }
 
   private async getPasses() {
-    const passes: PassRecord[] = [];
+    const passes: RemotePass[] = [];
 
     for (let offset = 0; ; offset += TABLE_PAGE_SIZE) {
-      const data = await this.execute<PassRecord[]>("Fetching remote passes", async () =>
-        this.client
-          .from("passes")
-          .select(
-            "id,azimuth_at_max,daylight_pass,direction,gain,has_histogram,has_polar_az_el,has_polar_direction,has_pristine,has_spectrogram,is_meteor,is_noaa,max_elevation,pass_end,pass_start_azimuth,pass_start"
-          )
-          .order("id", { ascending: true })
-          .range(offset, offset + TABLE_PAGE_SIZE - 1)
+      const data = await this.execute<RemotePass[]>(
+        "Fetching remote passes",
+        async () =>
+          this.client
+            .from("passes")
+            .select(
+              "id,source_id,azimuth_at_max,daylight_pass,direction,gain,has_histogram,has_polar_az_el,has_polar_direction,has_pristine,has_spectrogram,is_meteor,is_noaa,max_elevation,pass_end,pass_start_azimuth,pass_start"
+            )
+            .order("id", { ascending: true })
+            .range(offset, offset + TABLE_PAGE_SIZE - 1)
       );
       const page = data ?? [];
       passes.push(...page.map(normalizePass));
@@ -179,7 +182,7 @@ export class SupabaseTarget {
 
     return {
       imagePathsByPass,
-      passes: new Map(passes.map((pass) => [pass.id, pass])),
+      passesBySourceId: new Map(passes.map((pass) => [pass.source_id, pass])),
       storagePaths,
     };
   }
@@ -197,10 +200,24 @@ export class SupabaseTarget {
     );
   }
 
-  async upsertPass(pass: PassRecord) {
-    await this.execute(`Upserting pass ${pass.id}`, async () =>
-      this.client.from("passes").upsert(pass, { onConflict: "id" })
+  async upsertPass(pass: PassRecord): Promise<RemotePass> {
+    const savedPass = await this.execute<RemotePass>(
+      `Upserting source pass ${pass.source_id}`,
+      async () =>
+        this.client
+          .from("passes")
+          .upsert(pass, { onConflict: "source_id" })
+          .select(
+            "id,source_id,azimuth_at_max,daylight_pass,direction,gain,has_histogram,has_polar_az_el,has_polar_direction,has_pristine,has_spectrogram,is_meteor,is_noaa,max_elevation,pass_end,pass_start_azimuth,pass_start"
+          )
+          .single()
     );
+
+    if (!savedPass) {
+      throw new Error(`Upserting source pass ${pass.source_id} returned no row`);
+    }
+
+    return normalizePass(savedPass);
   }
 
   async insertImageRows(passId: number, paths: string[]) {
