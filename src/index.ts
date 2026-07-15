@@ -1,6 +1,7 @@
 import { addMilliseconds, format } from "date-fns";
 import { loadConfig, validateLocalPaths } from "./config";
 import { LocalSource } from "./local-source";
+import { RaspberryStatsSource } from "./raspberry-stats-source";
 import { SupabaseTarget } from "./supabase-target";
 import { SyncService } from "./sync-service";
 import { sleep } from "./utils/sleep";
@@ -37,7 +38,8 @@ async function main() {
 
   const localSource = new LocalSource(config);
   const target = new SupabaseTarget(config);
-  const syncService = new SyncService(config, localSource, target);
+  const statsSource = new RaspberryStatsSource(config);
+  const syncService = new SyncService(config, localSource, target, statsSource);
 
   console.log(`${format(new Date(), "HH:mm:ss")}: Starting sync service...`);
 

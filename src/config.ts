@@ -13,6 +13,8 @@ export interface AppConfig {
   retryBaseDelayMs: number;
   storageBucket: string;
   storagePrefix: string;
+  statsDiskMount: string;
+  statsRetentionMs: number;
   supabaseKey: string;
   supabaseUrl: string;
   syncIntervalMs: number;
@@ -101,6 +103,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error("SUPABASE_STORAGE_BUCKET cannot be empty");
   }
 
+  const statsDiskMount = (env.RASPBERRY_STATS_DISK_MOUNT ?? "/").trim();
+  if (!statsDiskMount) {
+    throw new Error("RASPBERRY_STATS_DISK_MOUNT cannot be empty");
+  }
+
   return {
     dbPath:
       env.SQLITE_DB_PATH ?? "/home/pi/raspberry-noaa-v2/db/panel.db",
@@ -111,6 +118,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     retryBaseDelayMs: readPositiveInteger(env, "RETRY_BASE_DELAY_MS", 1_000),
     storageBucket,
     storagePrefix,
+    statsDiskMount,
+    statsRetentionMs:
+      readPositiveNumber(env, "RASPBERRY_STATS_RETENTION_DAYS", 7) *
+      24 *
+      60 *
+      60_000,
     supabaseKey,
     supabaseUrl,
     syncIntervalMs:

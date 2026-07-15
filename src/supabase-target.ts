@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { AppConfig } from "./config";
 import { LocalImage, PassRecord, RemotePass } from "./models/decoded-pass";
+import { RaspberryStatRecord } from "./models/raspberry-stat";
 import { UpcomingPassRecord } from "./models/upcoming-pass";
 import { sleep } from "./utils/sleep";
 
@@ -246,6 +247,30 @@ export class SupabaseTarget {
 
       return query.gte("pass_start", "1970-01-01T00:00:00.000Z");
     });
+  }
+
+  async syncRaspberryStats(
+    record: RaspberryStatRecord | null,
+    retentionCutoff: string
+  ) {
+    const operations: Promise<unknown>[] = [
+      this.execute("Removing expired Raspberry stats", async () =>
+        this.client
+          .from("raspberry_stats")
+          .delete()
+          .lt("recorded_at", retentionCutoff)
+      ),
+    ];
+
+    if (record) {
+      operations.push(
+        this.execute("Saving Raspberry stats", async () =>
+          this.client.from("raspberry_stats").insert(record)
+        )
+      );
+    }
+
+    await Promise.all(operations);
   }
 
   async insertImageRows(passId: number, paths: string[]) {

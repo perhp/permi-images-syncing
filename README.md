@@ -20,6 +20,8 @@ Each cycle:
 6. Uses Supabase's generated pass ID for new `passes_images` rows.
 7. Replaces `upcoming_passes` with the active future rows from
    `predict_passes`.
+8. Records Raspberry Pi health metrics and removes samples older than the
+   configured retention period.
 
 The operations are idempotent. A failure leaves successfully uploaded objects
 in place, and the next cycle resumes the missing work instead of deleting
@@ -57,6 +59,8 @@ name for existing installations, but new configurations should use
 | `RETRY_BASE_DELAY_MS` | `1000` | Initial exponential-backoff delay |
 | `SUPABASE_STORAGE_BUCKET` | `passes` | Storage bucket name |
 | `SUPABASE_STORAGE_PREFIX` | `images` | Folder inside the Storage bucket |
+| `RASPBERRY_STATS_DISK_MOUNT` | `/` | Disk mount recorded in station statistics |
+| `RASPBERRY_STATS_RETENTION_DAYS` | `7` | Number of days of station statistics to retain |
 
 All numeric configuration values must be positive. The application opens the
 raspinoaa database read-only and exits with a descriptive error if either local
@@ -175,6 +179,34 @@ create table public.upcoming_passes (
 | `azimuth_at_max` | `float8`, not null |
 | `direction` | `text`, not null |
 | `sync_batch` | `uuid`, not null |
+
+### `raspberry_stats`
+
+The syncer inserts one sample per cycle, so the default five-minute interval
+produces about 2,016 rows over seven days. Metrics are nullable so a command
+unsupported by the current host does not prevent the remaining values from
+being saved.
+
+```sql
+create table public.raspberry_stats (
+  id bigint generated always as identity primary key,
+  recorded_at timestamptz not null default now(),
+  cpu_temperature_c double precision,
+  cpu_usage_percent double precision,
+  memory_total_bytes bigint,
+  memory_used_bytes bigint,
+  disk_total_bytes bigint,
+  disk_used_bytes bigint,
+  uptime_ms bigint
+);
+
+create index raspberry_stats_recorded_at_idx
+  on public.raspberry_stats (recorded_at desc);
+```
+
+The service key inserts samples and deletes rows older than
+`RASPBERRY_STATS_RETENTION_DAYS`. The website reads the latest seven days from
+this table using its server-side service client.
 
 The secret key bypasses Row Level Security and must only be stored on the
 Raspberry Pi or another trusted backend.

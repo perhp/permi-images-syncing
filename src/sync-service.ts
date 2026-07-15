@@ -6,6 +6,7 @@ import {
   PassRecord,
   RemotePass,
 } from "./models/decoded-pass";
+import { RaspberryStatCollection } from "./models/raspberry-stat";
 import { UpcomingPassRecord } from "./models/upcoming-pass";
 import { RemoteSnapshot } from "./supabase-target";
 import { formatDuration } from "./utils/format-duration";
@@ -19,10 +20,18 @@ interface LocalPassSource {
   getUpcomingPasses(): UpcomingPassRecord[];
 }
 
+interface SystemStatsSource {
+  collect(): Promise<RaspberryStatCollection>;
+}
+
 interface SyncTarget {
   getSnapshot(): Promise<RemoteSnapshot>;
   insertImageRows(passId: number, paths: string[]): Promise<void>;
   replaceUpcomingPasses(passes: UpcomingPassRecord[]): Promise<void>;
+  syncRaspberryStats(
+    record: RaspberryStatCollection["record"],
+    retentionCutoff: string
+  ): Promise<void>;
   uploadImage(image: LocalImage): Promise<void>;
   upsertPass(pass: PassRecord): Promise<RemotePass>;
 }
@@ -34,6 +43,8 @@ interface CycleSummary {
   passesSkippedWithoutImages: number;
   passesUnchanged: number;
   storageUploads: number;
+  raspberryStatsSaved: boolean;
+  raspberryStatsSyncFailed: boolean;
   upcomingPassesSynced: number;
   upcomingSyncFailed: boolean;
 }
@@ -107,6 +118,7 @@ async function runWithConcurrency<T>(
 export class SyncService {
   private readonly config: AppConfig;
   private readonly localSource: LocalPassSource;
+  private readonly statsSource: SystemStatsSource;
   private readonly target: SyncTarget;
   private lastRemoteRefresh = 0;
   private remoteSnapshot: RemoteSnapshot | undefined;
@@ -114,10 +126,12 @@ export class SyncService {
   constructor(
     config: AppConfig,
     localSource: LocalPassSource,
-    target: SyncTarget
+    target: SyncTarget,
+    statsSource: SystemStatsSource
   ) {
     this.config = config;
     this.localSource = localSource;
+    this.statsSource = statsSource;
     this.target = target;
   }
 
@@ -226,10 +240,11 @@ export class SyncService {
     const mode = options.dryRun ? " (dry run)" : "";
     console.log(`${format(new Date(), "HH:mm:ss")}: Syncing${mode}...`);
 
-    const [passes, upcomingPasses, snapshot] = await Promise.all([
+    const [passes, upcomingPasses, snapshot, stats] = await Promise.all([
       this.localSource.getPasses(),
       this.localSource.getUpcomingPasses(),
       this.getRemoteSnapshot(),
+      this.statsSource.collect(),
     ]);
     const summary: CycleSummary = {
       failed: 0,
@@ -238,6 +253,8 @@ export class SyncService {
       passesSkippedWithoutImages: 0,
       passesUnchanged: 0,
       storageUploads: 0,
+      raspberryStatsSaved: false,
+      raspberryStatsSyncFailed: false,
       upcomingPassesSynced: 0,
       upcomingSyncFailed: false,
     };
@@ -270,6 +287,27 @@ export class SyncService {
       }
     }
 
+    for (const error of stats.errors) {
+      console.warn(`    Raspberry stats: ${error}`);
+    }
+
+    if (options.dryRun) {
+      summary.raspberryStatsSaved = stats.record !== null;
+    } else {
+      try {
+        await this.target.syncRaspberryStats(
+          stats.record,
+          new Date(Date.now() - this.config.statsRetentionMs).toISOString()
+        );
+        summary.raspberryStatsSaved = stats.record !== null;
+      } catch (error) {
+        summary.raspberryStatsSyncFailed = true;
+        console.error(
+          `    Raspberry stats: sync failed\n${describeError(error)}`
+        );
+      }
+    }
+
     const changedLabel = options.dryRun ? "would change" : "changed";
     const uploadedLabel = options.dryRun ? "would upload" : "uploaded";
     const insertedLabel = options.dryRun ? "would insert" : "inserted";
@@ -286,7 +324,13 @@ export class SyncService {
         summary.upcomingPassesSynced
       } upcoming pass(es) ${options.dryRun ? "would sync" : "synced"}${
         summary.upcomingSyncFailed ? ", upcoming sync failed" : ""
-      }.`
+      }, Raspberry stats ${
+        summary.raspberryStatsSaved
+          ? options.dryRun
+            ? "would save"
+            : "saved"
+          : "not saved"
+      }${summary.raspberryStatsSyncFailed ? ", stats sync failed" : ""}.`
     );
 
     return summary;
