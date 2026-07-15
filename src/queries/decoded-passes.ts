@@ -8,6 +8,7 @@ export const decodedPassesQuery = `SELECT
     has_pristine,
     has_spectrogram,
     file_path,
+    sat_type,
     predict_passes.pass_start,
     predict_passes.max_elev,
     predict_passes.direction,
@@ -16,4 +17,6 @@ export const decodedPassesQuery = `SELECT
     predict_passes.pass_start_azimuth
 FROM
     decoded_passes
-    INNER JOIN predict_passes ON predict_passes.pass_start = decoded_passes.pass_start`;
+    INNER JOIN predict_passes ON predict_passes.pass_start = decoded_passes.pass_start
+ORDER BY
+    decoded_passes.pass_start ASC`;

@@ -10,11 +10,40 @@ export interface DecodedPass {
   has_polar_direction: number;
   has_pristine: number;
   has_spectrogram: number;
-  img_count: number | null;
-  is_noaa: number | null;
   max_elev: number;
   pass_end: number;
   pass_start_azimuth: number;
   pass_start: number;
   sat_type: number;
+}
+
+export interface PassRecord {
+  id: number;
+  azimuth_at_max: number;
+  daylight_pass: boolean;
+  direction: string;
+  gain: number;
+  has_histogram: boolean;
+  has_polar_az_el: boolean;
+  has_polar_direction: boolean;
+  has_pristine: boolean;
+  has_spectrogram: boolean;
+  is_meteor: boolean;
+  is_noaa: boolean;
+  max_elevation: number;
+  pass_end: string;
+  pass_start_azimuth: number;
+  pass_start: string;
+}
+
+export interface LocalImage {
+  contentType: string;
+  filePath: string;
+  name: string;
+  storagePath: string;
+}
+
+export interface LocalPass {
+  images: LocalImage[];
+  record: PassRecord;
 }

@@ -1,190 +1,74 @@
-require("dotenv").config();
-
-import { PostgrestSingleResponse } from "@supabase/supabase-js";
-import Database from "better-sqlite3";
-import { addMinutes, format } from "date-fns";
-import { readFile, readdir } from "node:fs/promises";
-import { supabase } from "./libs/supabase";
-import { DecodedPass } from "./models/decoded-pass";
-import { decodedPassesQuery } from "./queries/decoded-passes";
-import { formatDuration } from "./utils/format-duration";
+import { addMilliseconds, format } from "date-fns";
+import { loadConfig, validateLocalPaths } from "./config";
+import { LocalSource } from "./local-source";
+import { SupabaseTarget } from "./supabase-target";
+import { SyncService } from "./sync-service";
 import { sleep } from "./utils/sleep";
 
-console.log(`${format(new Date(), "HH:mm:ss")}: Starting up...`);
+function describeError(error: unknown) {
+  if (error instanceof Error) {
+    return error.stack ?? error.message;
+  }
+  return String(error);
+}
 
-const IMAGE_DIR = process.env.IMAGE_DIR ?? "/srv/images";
-const DB_PATH =
-  process.env.SQLITE_DB_PATH ?? "/home/leducia/raspberry-noaa-v2/db/panel.db";
-const SYNC_INTERVAL_MINUTES = parseInt(
-  process.env.SYNC_INTERVAL_MINUTES ?? "5",
-  10
-);
+function readOptions(args: string[]) {
+  const supportedOptions = new Set(["--dry-run", "--once"]);
+  const unknownOption = args.find((arg) => !supportedOptions.has(arg));
+  if (unknownOption) {
+    throw new Error(`Unknown option: ${unknownOption}`);
+  }
 
-const db = new Database(DB_PATH);
+  return {
+    dryRun: args.includes("--dry-run"),
+    once: args.includes("--once"),
+  };
+}
 
-const syncedPassesIds = new Set<number>();
+async function main() {
+  const options = readOptions(process.argv.slice(2));
+  const config = loadConfig();
+  validateLocalPaths(config);
 
-async function sync() {
+  const abortController = new AbortController();
+  const stop = () => abortController.abort();
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+
+  const localSource = new LocalSource(config);
+  const target = new SupabaseTarget(config);
+  const syncService = new SyncService(config, localSource, target);
+
+  console.log(`${format(new Date(), "HH:mm:ss")}: Starting sync service...`);
+
   try {
-    console.log(`${format(new Date(), "HH:mm:ss")}: Syncing...\n`);
-    const now = +new Date();
-
-    if (syncedPassesIds.size === 0) {
-      console.log("    Getting initial passes...\n");
-      const { data: initialPasses } = await supabase
-        .from("passes")
-        .select("id");
-      if (initialPasses) {
-        for (const pass of initialPasses) {
-          syncedPassesIds.add(pass.id);
-        }
+    while (!abortController.signal.aborted) {
+      try {
+        await syncService.runCycle({ dryRun: options.dryRun });
+      } catch (error) {
+        console.error(`Sync cycle failed\n${describeError(error)}`);
       }
-    }
 
-    const images = (await readdir(IMAGE_DIR)).filter(
-      (path) => path !== "thumb"
-    );
-    const statement = db.prepare<DecodedPass[]>(decodedPassesQuery);
-    const passes = statement.all() as DecodedPass[];
-
-    if (passes.every((pass) => syncedPassesIds.has(pass.id))) {
-      console.log("    No new passes to sync\n");
-    } else {
-      for (const pass of passes) {
-        try {
-          if (syncedPassesIds.has(pass.id)) {
-            continue;
-          }
-
-          console.log("    Syncing pass: " + pass.id);
-          console.log("    - Checking pass existence...");
-          const { data: existingPass } = await supabase
-            .from("passes")
-            .select("id")
-            .eq("id", pass.id)
-            .single();
-          if (existingPass) {
-            syncedPassesIds.add(pass.id);
-            console.warn("    - Pass already exists \n");
-            continue;
-          }
-
-          console.log("    - Inserting pass...");
-          const { error: passError } = await supabase.from("passes").insert({
-            id: pass.id,
-            azimuth_at_max: pass.azimuth_at_max,
-            daylight_pass: Boolean(pass.daylight_pass),
-            direction: pass.direction,
-            gain: pass.gain,
-            has_histogram: Boolean(pass.has_histogram),
-            has_polar_az_el: Boolean(pass.has_polar_az_el),
-            has_polar_direction: Boolean(pass.has_polar_direction),
-            has_pristine: Boolean(pass.has_pristine),
-            has_spectrogram: Boolean(pass.has_spectrogram),
-            is_meteor: pass.file_path.includes("METEOR"),
-            is_noaa: pass.file_path.includes("NOAA"),
-            max_elevation: pass.max_elev,
-            pass_end: new Date(pass.pass_end * 1000),
-            pass_start_azimuth: pass.pass_start_azimuth,
-            pass_start: new Date(pass.pass_start * 1000),
-          });
-
-          if (passError) {
-            console.warn(`    - Couldn't insert pass`);
-            console.log(JSON.stringify(passError, null, 2));
-            continue;
-          }
-
-          console.log("    - Uploading images...");
-          const passImages = images.filter((image) =>
-            image.startsWith(pass.file_path)
-          );
-          const imagesResponses:
-            | (
-                | {
-                    data: {
-                      path: string;
-                    };
-                    error: null;
-                  }
-                | {
-                    data: null;
-                    error: any;
-                  }
-                | PostgrestSingleResponse<null>
-              )[] = [];
-
-          let uploadCount = 1;
-          for (let image of passImages) {
-            const dbResponse = await supabase
-              .from("passes_images")
-              .insert({ path: image, fk_passes_id: pass.id });
-            const storageResponse = await supabase.storage
-              .from("passes")
-              .upload(
-                `images/${image}`,
-                await readFile(`${IMAGE_DIR}/${image}`),
-                {
-                  contentType: "image/" + image.split(".").pop(),
-                  upsert: true,
-                }
-              );
-
-            imagesResponses.push(dbResponse);
-            imagesResponses.push(storageResponse);
-
-            console.log(
-              `    - ${uploadCount}/${passImages.length} images uploaded`
-            );
-
-            await sleep(1_000);
-            uploadCount++;
-          }
-
-          const imagesErrors = imagesResponses.filter(
-            (response) => response.error !== null
-          );
-          if (imagesErrors.length > 0) {
-            console.warn(`    - Couldn't upload all images`);
-            console.log(JSON.stringify(imagesErrors, null, 2));
-
-            await supabase.from("passes").delete().eq("id", pass.id);
-            await supabase
-              .from("passes_images")
-              .delete()
-              .eq("fk_passes_id", pass.id);
-            continue;
-          }
-
-          syncedPassesIds.add(pass.id);
-          console.log(`    - Pass synced succesfully\n`);
-        } catch (err) {
-          console.error("    - Pass syncing failed!\n");
-          await supabase.from("passes").delete().eq("id", pass.id);
-          await supabase
-            .from("passes_images")
-            .delete()
-            .eq("fk_passes_id", pass.id);
-          throw err;
-        }
+      if (options.once || abortController.signal.aborted) {
+        break;
       }
+
+      console.log(
+        `Next sync at ${format(
+          addMilliseconds(new Date(), config.syncIntervalMs),
+          "HH:mm"
+        )}.\n`
+      );
+      await sleep(config.syncIntervalMs, abortController.signal);
     }
-
-    console.log(
-      `${format(new Date(), "HH:mm:ss")}: Done in ${formatDuration(
-        +new Date() - now
-      )}! Next sync at ${format(
-        addMinutes(new Date(), SYNC_INTERVAL_MINUTES),
-        "HH:mm"
-      )}.\n`
-    );
-
-    setTimeout(sync, SYNC_INTERVAL_MINUTES * 60_000);
-  } catch (err) {
-    console.error("    - Error!\n");
-    await sleep(SYNC_INTERVAL_MINUTES * 60_000);
-    sync();
+  } finally {
+    localSource.close();
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
   }
 }
 
-sync();
+main().catch((error) => {
+  console.error(describeError(error));
+  process.exitCode = 1;
+});

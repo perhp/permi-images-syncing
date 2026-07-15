@@ -11,8 +11,10 @@ export const formatDuration = (ms: number) => {
     ms: Math.floor(ms) % 1000,
   };
 
-  return Object.entries(time)
+  const formatted = Object.entries(time)
     .filter((val) => val[1] !== 0)
     .map(([key, val]) => `${val}${key}`)
     .join(", ");
+
+  return formatted || "0ms";
 };
