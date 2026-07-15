@@ -8,7 +8,12 @@ import {
   LocalPass,
   PassRecord,
 } from "./models/decoded-pass";
+import {
+  PredictedPass,
+  UpcomingPassRecord,
+} from "./models/upcoming-pass";
 import { decodedPassesQuery } from "./queries/decoded-passes";
+import { upcomingPassesQuery } from "./queries/upcoming-passes";
 
 const CONTENT_TYPES: Record<string, string> = {
   ".gif": "image/gif",
@@ -40,6 +45,18 @@ function toPassRecord(pass: DecodedPass): PassRecord {
   };
 }
 
+function toUpcomingPassRecord(pass: PredictedPass): UpcomingPassRecord {
+  return {
+    azimuth_at_max: Number(pass.azimuth_at_max),
+    direction: pass.direction,
+    max_elevation: Number(pass.max_elev),
+    pass_end: new Date(pass.pass_end * 1_000).toISOString(),
+    pass_start: new Date(pass.pass_start * 1_000).toISOString(),
+    pass_start_azimuth: Number(pass.pass_start_azimuth),
+    satellite_name: pass.sat_name,
+  };
+}
+
 function getContentType(fileName: string) {
   return (
     CONTENT_TYPES[extname(fileName).toLowerCase()] ?? "application/octet-stream"
@@ -50,6 +67,10 @@ export class LocalSource {
   private readonly config: AppConfig;
   private readonly database: Database.Database;
   private readonly passesStatement: Database.Statement<[], DecodedPass>;
+  private readonly upcomingPassesStatement: Database.Statement<
+    { now: number },
+    PredictedPass
+  >;
 
   constructor(config: AppConfig) {
     this.config = config;
@@ -60,6 +81,10 @@ export class LocalSource {
     this.passesStatement = this.database.prepare<[], DecodedPass>(
       decodedPassesQuery
     );
+    this.upcomingPassesStatement = this.database.prepare<
+      { now: number },
+      PredictedPass
+    >(upcomingPassesQuery);
   }
 
   async getPasses(): Promise<LocalPass[]> {
@@ -89,6 +114,13 @@ export class LocalSource {
         record: toPassRecord(pass),
       };
     });
+  }
+
+  getUpcomingPasses(): UpcomingPassRecord[] {
+    const now = Math.floor(Date.now() / 1_000);
+    return this.upcomingPassesStatement
+      .all({ now })
+      .map(toUpcomingPassRecord);
   }
 
   close() {

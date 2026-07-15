@@ -4,8 +4,9 @@ This service reconciles weather-satellite passes captured by
 [raspberry-noaa-v2](https://github.com/jekhokie/raspberry-noaa-v2) with a
 Supabase database and Storage bucket.
 
-It is intentionally one-way: local passes are uploaded or repaired, but local
-pruning never deletes existing Supabase data.
+Completed passes are intentionally one-way: local passes are uploaded or
+repaired, but local pruning never deletes existing Supabase captures. Upcoming
+passes are an exact mirror of raspinoaa's current active prediction schedule.
 
 ## How synchronization works
 
@@ -17,6 +18,8 @@ Each cycle:
 4. Uploads missing Storage objects with bounded concurrency.
 5. Upserts the pass by its local `source_id` after Storage uploads succeed.
 6. Uses Supabase's generated pass ID for new `passes_images` rows.
+7. Replaces `upcoming_passes` with the active future rows from
+   `predict_passes`.
 
 The operations are idempotent. A failure leaves successfully uploaded objects
 in place, and the next cycle resumes the missing work instead of deleting
@@ -140,6 +143,38 @@ stored in `passes_images.fk_passes_id`.
 | `path` | `text` |
 | `fk_passes_id` | `int8` |
 | `created_at` | `timestamptz` |
+
+### `upcoming_passes`
+
+The pair `(satellite_name, pass_start)` must be unique so predictions can be
+upserted before stale rows are removed.
+
+```sql
+create table public.upcoming_passes (
+  id bigint generated always as identity primary key,
+  satellite_name text not null,
+  pass_start timestamptz not null,
+  pass_end timestamptz not null,
+  max_elevation double precision not null,
+  pass_start_azimuth double precision not null,
+  azimuth_at_max double precision not null,
+  direction text not null,
+  sync_batch uuid not null,
+  unique (satellite_name, pass_start)
+);
+```
+
+| Column | Type |
+| --- | --- |
+| `id` | `int8` identity, primary key |
+| `satellite_name` | `text`, not null |
+| `pass_start` | `timestamptz`, not null |
+| `pass_end` | `timestamptz`, not null |
+| `max_elevation` | `float8`, not null |
+| `pass_start_azimuth` | `float8`, not null |
+| `azimuth_at_max` | `float8`, not null |
+| `direction` | `text`, not null |
+| `sync_batch` | `uuid`, not null |
 
 The secret key bypasses Row Level Security and must only be stored on the
 Raspberry Pi or another trusted backend.

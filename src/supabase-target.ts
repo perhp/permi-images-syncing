@@ -1,7 +1,9 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { AppConfig } from "./config";
 import { LocalImage, PassRecord, RemotePass } from "./models/decoded-pass";
+import { UpcomingPassRecord } from "./models/upcoming-pass";
 import { sleep } from "./utils/sleep";
 
 const TABLE_PAGE_SIZE = 1_000;
@@ -218,6 +220,32 @@ export class SupabaseTarget {
     }
 
     return normalizePass(savedPass);
+  }
+
+  async replaceUpcomingPasses(passes: UpcomingPassRecord[]) {
+    const syncBatch = randomUUID();
+
+    if (passes.length > 0) {
+      await this.execute("Upserting upcoming passes", async () =>
+        this.client.from("upcoming_passes").upsert(
+          passes.map((pass) => ({
+            ...pass,
+            sync_batch: syncBatch,
+          })),
+          { onConflict: "satellite_name,pass_start" }
+        )
+      );
+    }
+
+    await this.execute("Removing stale upcoming passes", async () => {
+      const query = this.client.from("upcoming_passes").delete();
+
+      if (passes.length > 0) {
+        return query.neq("sync_batch", syncBatch);
+      }
+
+      return query.gte("pass_start", "1970-01-01T00:00:00.000Z");
+    });
   }
 
   async insertImageRows(passId: number, paths: string[]) {

@@ -6,6 +6,7 @@ import {
   PassRecord,
   RemotePass,
 } from "./models/decoded-pass";
+import { UpcomingPassRecord } from "./models/upcoming-pass";
 import { RemoteSnapshot } from "./supabase-target";
 import { formatDuration } from "./utils/format-duration";
 
@@ -15,11 +16,13 @@ interface SyncOptions {
 
 interface LocalPassSource {
   getPasses(): Promise<LocalPass[]>;
+  getUpcomingPasses(): UpcomingPassRecord[];
 }
 
 interface SyncTarget {
   getSnapshot(): Promise<RemoteSnapshot>;
   insertImageRows(passId: number, paths: string[]): Promise<void>;
+  replaceUpcomingPasses(passes: UpcomingPassRecord[]): Promise<void>;
   uploadImage(image: LocalImage): Promise<void>;
   upsertPass(pass: PassRecord): Promise<RemotePass>;
 }
@@ -31,6 +34,8 @@ interface CycleSummary {
   passesSkippedWithoutImages: number;
   passesUnchanged: number;
   storageUploads: number;
+  upcomingPassesSynced: number;
+  upcomingSyncFailed: boolean;
 }
 
 function describeError(error: unknown): string {
@@ -221,8 +226,9 @@ export class SyncService {
     const mode = options.dryRun ? " (dry run)" : "";
     console.log(`${format(new Date(), "HH:mm:ss")}: Syncing${mode}...`);
 
-    const [passes, snapshot] = await Promise.all([
+    const [passes, upcomingPasses, snapshot] = await Promise.all([
       this.localSource.getPasses(),
+      this.localSource.getUpcomingPasses(),
       this.getRemoteSnapshot(),
     ]);
     const summary: CycleSummary = {
@@ -232,6 +238,8 @@ export class SyncService {
       passesSkippedWithoutImages: 0,
       passesUnchanged: 0,
       storageUploads: 0,
+      upcomingPassesSynced: 0,
+      upcomingSyncFailed: false,
     };
 
     for (const pass of passes) {
@@ -248,6 +256,20 @@ export class SyncService {
       }
     }
 
+    if (options.dryRun) {
+      summary.upcomingPassesSynced = upcomingPasses.length;
+    } else {
+      try {
+        await this.target.replaceUpcomingPasses(upcomingPasses);
+        summary.upcomingPassesSynced = upcomingPasses.length;
+      } catch (error) {
+        summary.upcomingSyncFailed = true;
+        console.error(
+          `    Upcoming passes: sync failed\n${describeError(error)}`
+        );
+      }
+    }
+
     const changedLabel = options.dryRun ? "would change" : "changed";
     const uploadedLabel = options.dryRun ? "would upload" : "uploaded";
     const insertedLabel = options.dryRun ? "would insert" : "inserted";
@@ -260,7 +282,11 @@ export class SyncService {
         summary.failed
       } failed, ${summary.storageUploads} ${uploadedLabel}, ${
         summary.imageRowsInserted
-      } image row(s) ${insertedLabel}.`
+      } image row(s) ${insertedLabel}, ${
+        summary.upcomingPassesSynced
+      } upcoming pass(es) ${options.dryRun ? "would sync" : "synced"}${
+        summary.upcomingSyncFailed ? ", upcoming sync failed" : ""
+      }.`
     );
 
     return summary;
