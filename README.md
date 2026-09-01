@@ -1,5 +1,10 @@
 # raspinoaa → Supabase Syncer
 
+> **Superseded.** With [rnv3](https://github.com/perhp/rnv3) the station pushes its passes,
+> images, schedule and health straight to the website as webhook events
+> (`rnv3/docs/webhooks.md`), received by permi's `/api/station/webhook`. This poller is only
+> needed for a raspberry-noaa-v2 installation.
+
 This service reconciles weather-satellite passes captured by
 [raspberry-noaa-v2](https://github.com/jekhokie/raspberry-noaa-v2) with a
 Supabase database and Storage bucket.
